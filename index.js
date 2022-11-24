@@ -2,7 +2,7 @@ const express = require("express");
 const cors = require("cors");
 const jwt = require("jsonwebtoken");
 require("dotenv").config();
-const { MongoClient, ServerApiVersion } = require("mongodb");
+const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
 const port = process.env.PORT || 5000;
@@ -34,6 +34,18 @@ function verifyJWT(req, res, next) {
 }
 
 const usersCollection = client.db("dbBuyTop").collection("users");
+const productsCollection = client.db("dbBuyTop").collection("products");
+
+//Verify Seller
+const verifySeller = async (req, res, next) => {
+  
+  const query = { email: req.decoded.email };
+  const user = await usersCollection.findOne(query);
+  if (user.role !== "Seller") {
+    res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
 
 async function dbConnect() {
   try {
@@ -63,11 +75,29 @@ app.get("/users/admin/:email", async (req, res) => {
   const user = await usersCollection.findOne({ email: req.params.email });
   res.send({ isAdmin: user?.role === "Admin" });
 });
+
 //Check Seller
 app.get("/users/seller/:email", async (req, res) => {
   const user = await usersCollection.findOne({ email: req.params.email});
   res.send({isSeller: user?.role === "Seller"})
 });
+
+//Add and Delete Products
+app.post('/addproduct',verifyJWT,verifySeller, async(req,res)=>{
+  const result = await productsCollection.insertOne(req.body)
+  res.send(result)
+})
+
+app.delete('/myproducts/:id', async(req,res)=>{
+  const result = await productsCollection.deleteOne({_id: ObjectId(req.params.id)})
+  res.send(result)
+})
+
+//My Products
+app.get('/myproducts/:email',verifyJWT,verifySeller, async(req,res)=>{
+  const result = await productsCollection.find({email: req.params.email}).toArray()
+  res.send(result)
+})
 
 //Server Connection Status
 app.get("/", (req, res) => {
