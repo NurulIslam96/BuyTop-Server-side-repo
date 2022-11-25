@@ -35,13 +35,34 @@ function verifyJWT(req, res, next) {
 
 const usersCollection = client.db("dbBuyTop").collection("users");
 const productsCollection = client.db("dbBuyTop").collection("products");
+const categoriesCollection = client.db("dbBuyTop").collection("categories");
+const bookingCollection = client.db("dbBuyTop").collection("bookings");
+const reportCollection = client.db("dbBuyTop").collection("reported");
+
+//Verify Admin
+const verifyAdmin = async (req, res, next) => {
+  const query = { email: req.decoded.email };
+  const user = await usersCollection.findOne(query);
+  if (user.role !== "Admin") {
+    res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
 
 //Verify Seller
 const verifySeller = async (req, res, next) => {
-  
   const query = { email: req.decoded.email };
   const user = await usersCollection.findOne(query);
   if (user.role !== "Seller") {
+    res.status(403).send({ message: "forbidden access" });
+  }
+  next();
+};
+//Verify Buyer
+const verifyBuyer = async (req, res, next) => {
+  const query = { email: req.decoded.email };
+  const user = await usersCollection.findOne(query);
+  if (user.role !== "Buyer") {
     res.status(403).send({ message: "forbidden access" });
   }
   next();
@@ -78,26 +99,109 @@ app.get("/users/admin/:email", async (req, res) => {
 
 //Check Seller
 app.get("/users/seller/:email", async (req, res) => {
-  const user = await usersCollection.findOne({ email: req.params.email});
-  res.send({isSeller: user?.role === "Seller"})
+  const user = await usersCollection.findOne({ email: req.params.email });
+  res.send({ isSeller: user?.role === "Seller" });
+});
+//Check Buyer
+app.get("/users/buyer/:email", async (req, res) => {
+  const user = await usersCollection.findOne({ email: req.params.email });
+  res.send({ isSeller: user?.role === "Buyer" });
 });
 
-//Add and Delete Products
-app.post('/addproduct',verifyJWT,verifySeller, async(req,res)=>{
-  const result = await productsCollection.insertOne(req.body)
+//Seller Verify Status
+app.get("/users/verify/:email", async (req, res) => {
+  const user = await usersCollection.findOne({ email: req.params.email });
+  res.send({ isVerified: user?.verified === true });
+});
+
+app.get('/categories',async(req,res)=>{
+  const result = await categoriesCollection.find({}).toArray()
   res.send(result)
 })
 
-app.delete('/myproducts/:id', async(req,res)=>{
-  const result = await productsCollection.deleteOne({_id: ObjectId(req.params.id)})
+app.get('/category/:id', async(req,res)=>{
+  const id = req.params.id;
+  const category = await categoriesCollection.findOne({_id: ObjectId(id)})
+  const result = await productsCollection.find({category: category.Category}).toArray()
+  res.send({result, category})
+})
+
+//Book items
+app.post('/mybooking',verifyJWT,verifyBuyer, async(req,res)=>{
+  const result = await bookingCollection.insertOne(req.body)
   res.send(result)
 })
+app.patch('/bookstatus/:id',verifyJWT,verifyBuyer,async(req,res)=>{
+  const result = await productsCollection.updateOne({_id: ObjectId(req.params.id)},{
+    $set: req.body
+  })
+  res.send(result)
+})
+
+//Report Items
+app.put('/reported/:id',verifyJWT,async(req,res)=>{
+  const filter = {productId: req.params.id}
+  const options = {upsert: true}
+  const updatedDoc = {
+    $set: req.body
+  }
+  const result = await reportCollection.updateOne(filter, updatedDoc, options)
+  res.send(result)
+})
+
+//Add and Delete Products
+app.post("/addproduct", verifyJWT, verifySeller, async (req, res) => {
+  const result = await productsCollection.insertOne(req.body);
+  res.send(result);
+});
+
+app.delete("/myproducts/:id",verifyJWT,verifySeller, async (req, res) => {
+  const result = await productsCollection.deleteOne({
+    _id: ObjectId(req.params.id),
+  });
+  res.send(result);
+});
 
 //My Products
-app.get('/myproducts/:email',verifyJWT,verifySeller, async(req,res)=>{
-  const result = await productsCollection.find({email: req.params.email}).toArray()
+app.get("/myproducts/:email", verifyJWT,verifySeller, async (req, res) => {
+  const result = await productsCollection
+    .find({ email: req.params.email })
+    .toArray();
+  res.send(result);
+});
+
+//My Orders
+app.get('/myorders/:email',verifyJWT,verifyBuyer,async(req,res)=>{
+  const result = await bookingCollection.find({email: req.params.email}).toArray()
   res.send(result)
 })
+
+app.patch('/myorders/:id',verifyJWT,verifyBuyer,async(req,res)=>{
+  const deleteOrder = await bookingCollection.deleteOne({productId: req.params.id})
+  const result = await productsCollection.updateOne({_id: ObjectId(req.params.id)},{
+    $set: req.body
+  })
+  res.send(result)
+})
+
+//Add Advertisements and remove Advertisements
+app.patch("/advertise/:id", verifyJWT, verifySeller, async (req, res) => {
+  try {
+    const result = await productsCollection.updateOne({_id: ObjectId(req.params.id)},{
+      $set: req.body
+    })
+    res.send(result)
+  } catch (error) {console.log(error.message)}
+});
+
+app.patch("/rmvadvertise/:id", verifyJWT, verifySeller, async (req, res) => {
+  try {
+    const result = await productsCollection.updateOne({_id: ObjectId(req.params.id)},{
+      $set: req.body
+    })
+    res.send(result)
+  } catch (error) {console.log(error.message)}
+});
 
 //Server Connection Status
 app.get("/", (req, res) => {
