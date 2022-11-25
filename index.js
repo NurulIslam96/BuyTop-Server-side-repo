@@ -203,6 +203,22 @@ app.patch("/rmvadvertise/:id", verifyJWT, verifySeller, async (req, res) => {
   } catch (error) {console.log(error.message)}
 });
 
+//Get Reported Items
+app.get('/reporteditems',verifyJWT,verifyAdmin,async(req,res)=>{
+  const result = await reportCollection.find({}).toArray()
+  res.send(result)
+})
+
+//Delete Report Item from inventory and report data
+app.delete('/itemdelete/:id',verifyJWT,verifyAdmin,async(req,res)=>{
+  const result = await productsCollection.deleteOne({_id: ObjectId(req.params.id)})
+  res.send(result)
+})
+app.delete('/reportdelete/:id',verifyJWT,verifyAdmin,async(req,res)=>{
+  const result = await reportCollection.deleteOne({_id: ObjectId(req.params.id)})
+  res.send(result)
+})
+
 //Server Connection Status
 app.get("/", (req, res) => {
   res.send("API is Running");
