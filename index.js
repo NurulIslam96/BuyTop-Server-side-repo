@@ -105,7 +105,7 @@ app.get("/users/seller/:email", async (req, res) => {
 //Check Buyer
 app.get("/users/buyer/:email", async (req, res) => {
   const user = await usersCollection.findOne({ email: req.params.email });
-  res.send({ isSeller: user?.role === "Buyer" });
+  res.send({ isBuyer: user?.role === "Buyer" });
 });
 
 //Seller Verify Status
@@ -184,8 +184,8 @@ app.patch('/myorders/:id',verifyJWT,verifyBuyer,async(req,res)=>{
   res.send(result)
 })
 
-//Add Advertisements and remove Advertisements
-app.patch("/advertise/:id", verifyJWT, verifySeller, async (req, res) => {
+//Add,Remove and Get Advertisements
+app.patch("/addAdv/:id", verifyJWT, verifySeller, async (req, res) => {
   try {
     const result = await productsCollection.updateOne({_id: ObjectId(req.params.id)},{
       $set: req.body
@@ -203,9 +203,43 @@ app.patch("/rmvadvertise/:id", verifyJWT, verifySeller, async (req, res) => {
   } catch (error) {console.log(error.message)}
 });
 
+app.get('/alladv', async(req,res)=>{
+  const result = await productsCollection.find({status: "Advertised"}).toArray()
+  res.send(result)
+})
+
 //Get Reported Items
 app.get('/reporteditems',verifyJWT,verifyAdmin,async(req,res)=>{
   const result = await reportCollection.find({}).toArray()
+  res.send(result)
+})
+
+//Get All Users
+app.get('/allsellers',verifyJWT,verifyAdmin,async(req,res)=>{
+  const result = await usersCollection.find({role: "Seller"}).toArray()
+  res.send(result)
+})
+app.get('/allbuyers',verifyJWT,verifyAdmin,async(req,res)=>{
+  const result = await usersCollection.find({role: "Buyer"}).toArray()
+  res.send(result)
+})
+
+//verify User
+app.patch("/verifyuser/:email",verifyJWT,verifyAdmin,async(req,res)=>{
+  const updateVerify = await productsCollection.updateMany({email: req.params.email},{
+    $set: {
+      isVerified: true
+    }
+  })
+  const result = await usersCollection.updateOne({email: req.params.email},{
+    $set: req.body
+  })
+  res.send(result)
+})
+
+//Delete User
+app.delete('/allusers/:id',verifyJWT,verifyAdmin,async(req,res)=>{
+  const result = await usersCollection.deleteOne({_id: ObjectId(req.params.id)})
   res.send(result)
 })
 
