@@ -124,7 +124,7 @@ app.get('/categories',async(req,res)=>{
 app.get('/category/:id', async(req,res)=>{
   const id = req.params.id;
   const category = await categoriesCollection.findOne({_id: ObjectId(id)})
-  const result = await productsCollection.find({category: category.Category}).toArray()
+  const result = await productsCollection.find({category: category.Category}).sort({_id: -1}).toArray()
   res.send({result, category})
 })
 
@@ -168,6 +168,7 @@ app.delete("/myproducts/:id",verifyJWT,verifySeller, async (req, res) => {
 app.get("/myproducts/:email", verifyJWT,verifySeller, async (req, res) => {
   const result = await productsCollection
     .find({ email: req.params.email })
+    .sort({_id: -1})
     .toArray();
   res.send(result);
 });
@@ -206,7 +207,7 @@ app.patch("/rmvadvertise/:id", verifyJWT, verifySeller, async (req, res) => {
 });
 
 app.get('/alladv', async(req,res)=>{
-  const result = await productsCollection.find({status: "Advertised"}).toArray()
+  const result = await productsCollection.find({status: "Advertised"}).sort({_id: -1}).toArray()
   res.send(result)
 })
 
@@ -218,11 +219,11 @@ app.get('/reporteditems',verifyJWT,verifyAdmin,async(req,res)=>{
 
 //Get All Users
 app.get('/allsellers',verifyJWT,verifyAdmin,async(req,res)=>{
-  const result = await usersCollection.find({role: "Seller"}).toArray()
+  const result = await usersCollection.find({role: "Seller"}).sort({_id: -1}).toArray()
   res.send(result)
 })
 app.get('/allbuyers',verifyJWT,verifyAdmin,async(req,res)=>{
-  const result = await usersCollection.find({role: "Buyer"}).toArray()
+  const result = await usersCollection.find({role: "Buyer"}).sort({_id: -1}).toArray()
   res.send(result)
 })
 
@@ -264,7 +265,7 @@ app.get('/payment/:id',async(req,res)=>{
 app.post('/create-payment-intent', async(req,res)=>{
   try {
   const paymentIntent = await stripe.paymentIntents.create({
-    currency: 'bdt',
+    currency: 'usd',
     amount: req.body.price * 100,
     "payment_method_types":[
       "card"
