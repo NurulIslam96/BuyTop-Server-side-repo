@@ -253,6 +253,12 @@ app.delete('/reportdelete/:id',verifyJWT,verifyAdmin,async(req,res)=>{
   res.send(result)
 })
 
+//Payment Options
+app.get('/payment/:id',async(req,res)=>{
+  const result = await bookingCollection.findOne({_id: ObjectId(req.params.id)})
+  res.send(result)
+})
+
 //Server Connection Status
 app.get("/", (req, res) => {
   res.send("API is Running");
