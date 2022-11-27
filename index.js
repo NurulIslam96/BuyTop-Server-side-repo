@@ -1,7 +1,8 @@
 const express = require("express");
 const cors = require("cors");
-const jwt = require("jsonwebtoken");
 require("dotenv").config();
+const jwt = require("jsonwebtoken");
+const stripe = require("stripe")(`${process.env.STRIPE_KEY}`);
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 
 const app = express();
@@ -38,6 +39,7 @@ const productsCollection = client.db("dbBuyTop").collection("products");
 const categoriesCollection = client.db("dbBuyTop").collection("categories");
 const bookingCollection = client.db("dbBuyTop").collection("bookings");
 const reportCollection = client.db("dbBuyTop").collection("reported");
+const paymentCollection = client.db("dbBuyTop").collection("payments");
 
 //Verify Admin
 const verifyAdmin = async (req, res, next) => {
@@ -258,6 +260,39 @@ app.get('/payment/:id',async(req,res)=>{
   const result = await bookingCollection.findOne({_id: ObjectId(req.params.id)})
   res.send(result)
 })
+
+app.post('/create-payment-intent', async(req,res)=>{
+  try {
+  const paymentIntent = await stripe.paymentIntents.create({
+    currency: 'bdt',
+    amount: req.body.price * 100,
+    "payment_method_types":[
+      "card"
+    ]
+  });
+  res.send({
+    clientSecret: paymentIntent.client_secret,
+  })
+  } catch (error) {
+    console.log(error.message)
+  }
+})
+
+app.post('/payinfo',verifyJWT,async(req,res)=>{
+  const bookStatus = await bookingCollection.updateOne({_id: ObjectId(req.body.bookingId)},{
+    $set:{
+      status: "Paid"
+    }
+  })
+  const productStatus = await productsCollection.updateOne({_id: ObjectId(req.body.productId)},{
+    $set:{
+      status: "Paid"
+    }
+  })
+  const result = await paymentCollection.insertOne(req.body)
+  res.send(result)
+})
+
 
 //Server Connection Status
 app.get("/", (req, res) => {
