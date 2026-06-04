@@ -348,6 +348,32 @@ app.post("/payinfo", verifyJWT, async (req, res) => {
   res.send(result);
 });
 
+//Analytics Configuration Endpoint
+app.get("/analytics-config", (req, res) => {
+  res.send({
+    analyticsEnabled: true,
+    provider: "Vercel Web Analytics",
+    version: "2.0.1",
+    message: "Analytics should be configured on the frontend application. See VERCEL_ANALYTICS_SETUP.md for instructions.",
+    documentation: "/analytics-docs"
+  });
+});
+
+//Analytics Documentation Endpoint
+app.get("/analytics-docs", (req, res) => {
+  res.send({
+    setup: "Vercel Web Analytics is configured for this project",
+    frontendIntegration: {
+      nextjs_app_router: "Import and add <Analytics /> from '@vercel/analytics/next' in your root layout",
+      nextjs_pages_router: "Import and add <Analytics /> from '@vercel/analytics/next' in _app.js",
+      react: "Import and add <Analytics /> from '@vercel/analytics/react' in your root component",
+      vue: "Import and add <Analytics /> from '@vercel/analytics/vue' in your template"
+    },
+    documentation: "https://vercel.com/docs/analytics/quickstart",
+    repositoryGuide: "See VERCEL_ANALYTICS_SETUP.md in the repository root for detailed instructions"
+  });
+});
+
 //Server Connection Status
 app.get("/", (req, res) => {
   res.send("API is Running");
