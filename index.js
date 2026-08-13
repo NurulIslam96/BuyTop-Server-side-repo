@@ -121,13 +121,34 @@ try {
 }
 // On Vercel, a "warm" serverless container can run this file's top-level
 // code again on a later invocation without a fresh process - Firebase
-// throws if initializeApp() is called twice, so only initialize once per
-// container and reuse the existing app on subsequent invocations.
-// NOTE: firebase-admin v14's default `admin` object no longer exposes an
-// `.apps` array (that's the older API) - use the modular getApps() instead.
-const { getApps } = require("firebase-admin/app");
-if (getApps().length === 0) {
+// throws if initializeApp() is called twice, so we only want to initialize
+// once per container and reuse the existing app on later invocations.
+//
+// NOTE: we used to pre-check this with getApps() from "firebase-admin/app"
+// (the modular replacement for the old admin.apps array). That subpath
+// import resolves fine locally, but on Vercel's bundler it can come back
+// returning undefined instead of an array, which crashed every request
+// with "Cannot read properties of undefined (reading 'length')" - the
+// getApps() call itself never threw, it just silently gave back the wrong
+// thing. Rather than depend on that subpath resolving correctly in every
+// bundling environment, just attempt the init and swallow the specific
+// "already exists" error a warm container produces on repeat init.
+try {
   admin.initializeApp({ credential: admin.cert(firebaseServiceAccount) });
+} catch (err) {
+  // Passing a `credential` option to initializeApp() a second time always
+  // throws "app/invalid-app-options" ("...invoked with an optional
+  // Credential. The SDK cannot confirm the equality..."), regardless of
+  // whether the credential is actually the same - firebase-admin refuses
+  // to deep-compare Credential objects and errs on the side of throwing.
+  // That's expected and harmless on a warm container: the existing
+  // [DEFAULT] app (from this same file's earlier invocation) is still
+  // there and gets reused by admin.auth() etc. automatically. Anything
+  // else (bad key, wrong project, malformed JSON) should still surface.
+  const reinitOnWarmContainer = err && err.code === "app/invalid-app-options";
+  if (!reinitOnWarmContainer) {
+    throw err;
+  }
 }
 // firebase-admin v14 dropped admin.auth() from the default export - auth
 // now only exists as a separate modular import (firebase-admin/auth).
