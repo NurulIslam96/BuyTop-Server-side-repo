@@ -119,7 +119,7 @@ try {
   console.error("========================================================\n");
   process.exit(1);
 }
-admin.initializeApp({ credential: admin.cert(firebaseServiceAccount) });
+if (admin.apps.length === 0) { admin.initializeApp({ credential: admin.cert(firebaseServiceAccount) }); }
 // firebase-admin v14 dropped admin.auth() from the default export - auth
 // now only exists as a separate modular import (firebase-admin/auth).
 // Rather than rewriting every admin.auth().xyz() call site across this
