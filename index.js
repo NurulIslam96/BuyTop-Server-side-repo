@@ -341,89 +341,126 @@ const logAudit = (req, action, details = {}) => {
 };
 
 let isDbConnected = false;
+// Cache the in-flight connect() promise so concurrent requests hitting the
+// same cold container all await the *same* connection attempt instead of
+// each firing their own, and so the middleware below can await a real
+// promise instead of racing a synchronous boolean that isn't true yet on
+// a fresh Vercel instance (see dbConnectionMiddleware).
+let dbConnectPromise = null;
 
 async function dbConnect() {
-  try {
-    await client.connect();
-    isDbConnected = true;
-    console.log("Database is Connected");
-    await usersCollection.createIndex({ email: 1 }, { unique: true });
-    await productsCollection.createIndex({ email: 1 });
-    await productsCollection.createIndex({ category: 1 });
-    await bookingCollection.createIndex({ email: 1 });
-    // At most one *active* (non-cancelled) booking per product. This is
-    // what makes it safe to leave the product's own status untouched
-    // (still "Available"/"Advertised") while a booking is only pending
-    // its deposit - two buyers can no longer both end up with a live
-    // booking on the same item, because the second insertOne below just
-    // throws a duplicate-key error instead of silently succeeding. The
-    // product itself only flips to "Booked" once the deposit actually
-    // clears (see /bkash/callback in routes/payments.js).
-    //
-    // MongoDB partial index filters only support a small allow-list of
-    // operators (equality, $exists, $gt/$gte/$lt/$lte, $type, $and) -
-    // { status: { $ne: "Cancelled" } } compiles to an unsupported $not
-    // and fails at index-build time. isActiveBooking is a plain boolean
-    // set true on every fresh booking (see POST /mybooking) and unset
-    // the moment a booking is cancelled (see both cancel-request approval
-    // routes), so a straight equality check works here instead.
-    await bookingCollection.createIndex(
-      { productId: 1 },
-      { unique: true, partialFilterExpression: { isActiveBooking: true } }
-    );
-    await reportCollection.createIndex({ productId: 1 }, { unique: true });
-    // One review per buyer per seller - posting again just updates it
-    // (see PUT /reviews/:sellerEmail below), same upsert pattern as
-    // reportCollection above.
-    await reviewsCollection.createIndex({ sellerEmail: 1, buyerEmail: 1 }, { unique: true });
-    await messagesCollection.createIndex({ conversationId: 1, createdAt: 1 });
-    await messagesCollection.createIndex({ buyerEmail: 1 });
-    await messagesCollection.createIndex({ sellerEmail: 1 });
-    await developerEmailsCollection.createIndex({ email: 1 }, { unique: true });
-    // One wishlist entry per buyer per product - saving something already
-    // saved is a silent no-op rather than a duplicate row (see the upsert
-    // in POST /wishlist below).
-    await wishlistCollection.createIndex({ email: 1, productId: 1 }, { unique: true });
-    await otpCollection.createIndex({ accountEmail: 1, purpose: 1 }, { unique: true });
-    await otpCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
-    await userReportsCollection.createIndex({ reportedEmail: 1 });
-    await banAppealsCollection.createIndex({ email: 1, status: 1 });
-    // One hidden-conversation record per user per thread - "delete
-    // conversation" just hides it from that person's inbox (see the
-    // DELETE /conversations/:productId/:buyerEmail route below).
-    await hiddenConversationsCollection.createIndex(
-      { email: 1, conversationId: 1 },
-      { unique: true }
-    );
-    // One-time rename: the old "SubAdmin" role string → "Moderator". Every
-    // role check in this file now looks for "Moderator" - without this, an
-    // account promoted before this rename would silently stop matching
-    // STAFF_ROLES and lose dashboard access entirely. Safe to run on every
-    // boot: it's a no-op once no documents still say "SubAdmin".
-    await usersCollection.updateMany({ role: "SubAdmin" }, { $set: { role: "Moderator" } });
-  } catch (error) {
-    isDbConnected = false;
-    console.error("\n========================================================");
-    console.error(" DATABASE CONNECTION FAILED:");
-    console.error(" " + error.message);
-    console.error("");
-    console.error(" Check in your .env file:");
-    console.error("  - DB_USER / DB_PASSWORD are correct");
-    console.error("  - The MongoDB Atlas user has correct read/write permissions");
-    console.error("  - Atlas Network Access allows your current IP (or 0.0.0.0/0 for dev)");
-    console.error("========================================================\n");
-  }
+  await client.connect();
+  isDbConnected = true;
+  console.log("Database is Connected");
+  await usersCollection.createIndex({ email: 1 }, { unique: true });
+  await productsCollection.createIndex({ email: 1 });
+  await productsCollection.createIndex({ category: 1 });
+  await bookingCollection.createIndex({ email: 1 });
+  // At most one *active* (non-cancelled) booking per product. This is
+  // what makes it safe to leave the product's own status untouched
+  // (still "Available"/"Advertised") while a booking is only pending
+  // its deposit - two buyers can no longer both end up with a live
+  // booking on the same item, because the second insertOne below just
+  // throws a duplicate-key error instead of silently succeeding. The
+  // product itself only flips to "Booked" once the deposit actually
+  // clears (see /bkash/callback in routes/payments.js).
+  //
+  // MongoDB partial index filters only support a small allow-list of
+  // operators (equality, $exists, $gt/$gte/$lt/$lte, $type, $and) -
+  // { status: { $ne: "Cancelled" } } compiles to an unsupported $not
+  // and fails at index-build time. isActiveBooking is a plain boolean
+  // set true on every fresh booking (see POST /mybooking) and unset
+  // the moment a booking is cancelled (see both cancel-request approval
+  // routes), so a straight equality check works here instead.
+  await bookingCollection.createIndex(
+    { productId: 1 },
+    { unique: true, partialFilterExpression: { isActiveBooking: true } }
+  );
+  await reportCollection.createIndex({ productId: 1 }, { unique: true });
+  // One review per buyer per seller - posting again just updates it
+  // (see PUT /reviews/:sellerEmail below), same upsert pattern as
+  // reportCollection above.
+  await reviewsCollection.createIndex({ sellerEmail: 1, buyerEmail: 1 }, { unique: true });
+  await messagesCollection.createIndex({ conversationId: 1, createdAt: 1 });
+  await messagesCollection.createIndex({ buyerEmail: 1 });
+  await messagesCollection.createIndex({ sellerEmail: 1 });
+  await developerEmailsCollection.createIndex({ email: 1 }, { unique: true });
+  // One wishlist entry per buyer per product - saving something already
+  // saved is a silent no-op rather than a duplicate row (see the upsert
+  // in POST /wishlist below).
+  await wishlistCollection.createIndex({ email: 1, productId: 1 }, { unique: true });
+  await otpCollection.createIndex({ accountEmail: 1, purpose: 1 }, { unique: true });
+  await otpCollection.createIndex({ expiresAt: 1 }, { expireAfterSeconds: 0 });
+  await userReportsCollection.createIndex({ reportedEmail: 1 });
+  await banAppealsCollection.createIndex({ email: 1, status: 1 });
+  // One hidden-conversation record per user per thread - "delete
+  // conversation" just hides it from that person's inbox (see the
+  // DELETE /conversations/:productId/:buyerEmail route below).
+  await hiddenConversationsCollection.createIndex(
+    { email: 1, conversationId: 1 },
+    { unique: true }
+  );
+  // One-time rename: the old "SubAdmin" role string → "Moderator". Every
+  // role check in this file now looks for "Moderator" - without this, an
+  // account promoted before this rename would silently stop matching
+  // STAFF_ROLES and lose dashboard access entirely. Safe to run on every
+  // boot: it's a no-op once no documents still say "SubAdmin".
+  await usersCollection.updateMany({ role: "SubAdmin" }, { $set: { role: "Moderator" } });
 }
-dbConnect();
 
-app.use((req, res, next) => {
-  if (!isDbConnected) {
-    return res.status(503).send({
-      message: "Database is not connected. Check the server terminal for a DATABASE CONNECTION FAILED message and fix your .env DB_USER/DB_PASSWORD.",
+// Kicks off (or returns the existing) connection attempt. Safe to call from
+// many concurrent requests on the same warm/cold container - they all await
+// the one shared promise rather than each calling client.connect() again.
+// On failure, the cached promise is cleared so the *next* request gets a
+// fresh retry instead of every future request on this container being
+// permanently stuck failing from one transient hiccup.
+function ensureDbConnected() {
+  if (!dbConnectPromise) {
+    dbConnectPromise = dbConnect().catch((error) => {
+      isDbConnected = false;
+      dbConnectPromise = null;
+      console.error("\n========================================================");
+      console.error(" DATABASE CONNECTION FAILED:");
+      console.error(" " + error.message);
+      console.error("");
+      console.error(" Check in your .env file:");
+      console.error("  - DB_USER / DB_PASSWORD are correct");
+      console.error("  - The MongoDB Atlas user has correct read/write permissions");
+      console.error("  - Atlas Network Access allows your current IP (or 0.0.0.0/0 for dev)");
+      console.error("========================================================\n");
+      throw error;
     });
   }
-  next();
+  return dbConnectPromise;
+}
+// Fire it off at module load too, so a warm container that already
+// finished connecting serves every request instantly without this
+// middleware needing to do anything beyond the already-resolved check.
+ensureDbConnected().catch(() => {
+  // Already logged above - this catch just stops the unhandled-rejection
+  // warning from the fire-and-forget call at module load.
 });
+
+app.use((req, res, next) => {
+  if (isDbConnected) {
+    // Fast path: already connected (the overwhelmingly common case on a
+    // warm container) - no need to await anything.
+    return next();
+  }
+  // Slow path: this container hasn't finished connecting yet (or a prior
+  // attempt failed). Wait on the shared in-flight/retry promise instead of
+  // instantly 503-ing a request that would have succeeded a few hundred ms
+  // later - that race is what caused the intermittent 200/503 flapping.
+  ensureDbConnected()
+    .then(() => next())
+    .catch(() => {
+      res.status(503).send({
+        message:
+          "Database is not connected. Check the server terminal for a DATABASE CONNECTION FAILED message and fix your .env DB_USER/DB_PASSWORD.",
+      });
+    });
+});
+
 
 const {
   verifyJWT,
