@@ -119,7 +119,16 @@ try {
   console.error("========================================================\n");
   process.exit(1);
 }
-if (admin.apps.length === 0) { admin.initializeApp({ credential: admin.cert(firebaseServiceAccount) }); }
+// On Vercel, a "warm" serverless container can run this file's top-level
+// code again on a later invocation without a fresh process - Firebase
+// throws if initializeApp() is called twice, so only initialize once per
+// container and reuse the existing app on subsequent invocations.
+// NOTE: firebase-admin v14's default `admin` object no longer exposes an
+// `.apps` array (that's the older API) - use the modular getApps() instead.
+const { getApps } = require("firebase-admin/app");
+if (getApps().length === 0) {
+  admin.initializeApp({ credential: admin.cert(firebaseServiceAccount) });
+}
 // firebase-admin v14 dropped admin.auth() from the default export - auth
 // now only exists as a separate modular import (firebase-admin/auth).
 // Rather than rewriting every admin.auth().xyz() call site across this
